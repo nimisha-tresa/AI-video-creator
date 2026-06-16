@@ -57,6 +57,11 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
+      args:
+        INSTALL_SYSTEM_DEPS: "false"
+        HTTP_PROXY: ${HTTP_PROXY}
+        HTTPS_PROXY: ${HTTPS_PROXY}
+        NO_PROXY: ${NO_PROXY}
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgresql+asyncpg://vcreator:vcreator_secret@postgres:5432/video_creator
