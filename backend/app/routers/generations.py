@@ -36,6 +36,9 @@ async def create_generation(
     user: User = Depends(get_current_user),
 ):
     from workers.tasks.dispatch import dispatch_generation
+    import structlog
+    
+    logger = structlog.get_logger()
 
     generation = Generation(
         owner_id=user.id,
@@ -53,12 +56,17 @@ async def create_generation(
     await db.commit()
     await db.refresh(generation)
 
-    # Dispatch to Celery
-    task = dispatch_generation.delay(generation.id)
-    generation.task_id = task.id
-    generation.status = GenerationStatus.QUEUED
+    # Dispatch to Celery with error handling
+    try:
+        task = dispatch_generation.delay(generation.id)
+        generation.task_id = task.id
+        generation.status = GenerationStatus.QUEUED
+    except Exception as exc:
+        logger.exception("Failed to dispatch generation task", generation_id=generation.id, error=str(exc))
+        generation.status = GenerationStatus.PENDING
+        generation.error_message = f"Task dispatch failed: {str(exc)}"
+    
     await db.commit()
-
     return generation
 
 

@@ -14,10 +14,27 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vcreator}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vcreator} -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  db-init:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vcreator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vcreator_secret}
+      POSTGRES_HOST: postgres
+    command: >
+      sh -c "
+      export PGPASSWORD=\"$${POSTGRES_PASSWORD}\";
+      psql -h \"$${POSTGRES_HOST}\" -U \"$${POSTGRES_USER}\" -d postgres -c \"CREATE DATABASE video_creator;\" || true;
+      psql -h \"$${POSTGRES_HOST}\" -U \"$${POSTGRES_USER}\" -d postgres -c \"CREATE DATABASE vcreator;\" || true;
+      "
 
   redis:
     image: redis:7-alpine
@@ -73,11 +90,17 @@ services:
       - COMFYUI_URL=http://comfyui:8188
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - ENVIRONMENT=development
+      - AUTH_BYPASS_ENABLED=${AUTH_BYPASS_ENABLED:-true}
+      - AUTH_BYPASS_EMAIL=${AUTH_BYPASS_EMAIL:-dev@local.app}
+      - AUTH_BYPASS_USERNAME=${AUTH_BYPASS_USERNAME:-dev_bypass}
+      - AUTH_BYPASS_SUPERUSER=${AUTH_BYPASS_SUPERUSER:-true}
     ports:
       - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio:
@@ -91,6 +114,11 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
+      args:
+        INSTALL_SYSTEM_DEPS: "false"
+        HTTP_PROXY: ${HTTP_PROXY}
+        HTTPS_PROXY: ${HTTPS_PROXY}
+        NO_PROXY: ${NO_PROXY}
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgresql+asyncpg://vcreator:vcreator_secret@postgres:5432/video_creator
@@ -101,23 +129,25 @@ services:
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
       - COMFYUI_URL=http://comfyui:8188
     depends_on:
-      - redis
-      - postgres
+      db-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     volumes:
       - ../backend:/app
     command: celery -A workers.celery_app worker --loglevel=info --concurrency=2 -Q image_gen,video_gen,upscale,default
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 
   celery-beat:
     build:
       context: ../backend
       dockerfile: Dockerfile
+      args:
+        INSTALL_SYSTEM_DEPS: "false"
+        HTTP_PROXY: ${HTTP_PROXY}
+        HTTPS_PROXY: ${HTTPS_PROXY}
+        NO_PROXY: ${NO_PROXY}
     restart: unless-stopped
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/1
@@ -147,13 +177,6 @@ services:
       - comfyui_models:/app/models
       - comfyui_output:/app/output
       - ../comfyui/workflows:/app/workflows
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 
   # ─── Frontend ────────────────────────────────────────────────────────────────
   frontend:

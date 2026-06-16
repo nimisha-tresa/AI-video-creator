@@ -19,17 +19,23 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
+    auth_bypass_enabled: bool = False
+    auth_bypass_email: str = "dev@local.app"
+    auth_bypass_username: str = "dev_bypass"
+    auth_bypass_superuser: bool = True
 
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: str
+    db_auto_create_schema: bool = True
+    db_auto_create_schema_in_production: bool = False
 
     # ── Redis / Celery ───────────────────────────────────────────────────────
-    redis_url: str = "redis://localhost:6379/0"
-    celery_broker_url: str = "redis://localhost:6379/1"
-    celery_result_backend: str = "redis://localhost:6379/2"
+    redis_url: str = "redis://redis:6379/0"
+    celery_broker_url: str = "redis://redis:6379/1"
+    celery_result_backend: str = "redis://redis:6379/2"
 
     # ── MinIO / S3 ───────────────────────────────────────────────────────────
-    minio_endpoint: str = "localhost:9000"
+    minio_endpoint: str = "minio:9000"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin123"
     minio_bucket_assets: str = "assets"
@@ -37,7 +43,7 @@ class Settings(BaseSettings):
     minio_secure: bool = False
 
     # ── ComfyUI ──────────────────────────────────────────────────────────────
-    comfyui_url: str = "http://localhost:8188"
+    comfyui_url: str = "http://comfyui:8188"
     comfyui_timeout: int = 300
 
     # ── GPU ──────────────────────────────────────────────────────────────────

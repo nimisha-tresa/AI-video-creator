@@ -95,17 +95,34 @@ class ComfyUIClient:
         Submit workflow → wait for completion → download output → upload to MinIO.
         Returns {"url": presigned_url, "seed": optional_seed}.
         """
-        prompt_id = await self._queue_prompt(workflow)
-        logger.info("Workflow queued", prompt_id=prompt_id)
+        logger.info("Connecting to ComfyUI", url=self.base_url, timeout=settings.comfyui_timeout)
+        try:
+            prompt_id = await self._queue_prompt(workflow)
+            logger.info("Workflow queued successfully", prompt_id=prompt_id, url=self.base_url)
+        except Exception as e:
+            logger.error("Failed to connect/queue to ComfyUI", url=self.base_url, error_type=type(e).__name__, error=str(e))
+            raise RuntimeError(f"ComfyUI connection failed at {self.base_url}: {e}") from e
 
-        output = await self._wait_for_completion(prompt_id, on_progress)
+        try:
+            output = await self._wait_for_completion(prompt_id, on_progress)
+        except Exception as e:
+            logger.error("Workflow execution failed or timed out", prompt_id=prompt_id, url=self.base_url, error_type=type(e).__name__, error=str(e))
+            raise
+
+        logger.info("Workflow completed, processing output", output_keys=list(output.keys()) if isinstance(output, dict) else type(output))
 
         # Detect output type
         is_video = bool(output.get("gifs") or output.get("videos"))
         content_type = "video/mp4" if is_video else "image/png"
         ext = ".mp4" if is_video else ".png"
+        logger.info("Output type detected", is_video=is_video, content_type=content_type)
 
-        data = await self._download_output(output)
+        try:
+            data = await self._download_output(output)
+            logger.info("Output downloaded successfully", size_mb=len(data) / 1024 / 1024)
+        except Exception as e:
+            logger.error("Failed to download output from ComfyUI", error_type=type(e).__name__, error=str(e))
+            raise
         key = upload_bytes(data, f"output{ext}", content_type, bucket=settings.minio_bucket_output)
 
         from app.services.storage import get_presigned_url

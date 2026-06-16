@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.database import engine
+from app.database import engine, init_db_schema
 from app.models import *  # noqa: F401,F403 — ensure all models are imported for Alembic
 from app.routers import assets, auth, generations, projects, ws
 
@@ -69,6 +69,14 @@ async def health():
 @app.on_event("startup")
 async def startup():
     logger.info("VideoCreator API starting", environment=settings.environment)
+    should_create_schema = settings.db_auto_create_schema and (
+        settings.environment != "production" or settings.db_auto_create_schema_in_production
+    )
+    if should_create_schema:
+        await init_db_schema()
+        logger.info("Database schema ensured")
+    else:
+        logger.info("Database schema auto-create skipped")
 
 
 @app.on_event("shutdown")
