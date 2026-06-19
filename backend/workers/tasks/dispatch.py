@@ -31,11 +31,12 @@ def dispatch_generation(self, generation_id: str):
     gen_type, owner_id = asyncio.get_event_loop().run_until_complete(_get_type())
 
     route_map = {
-        GenerationType.TEXT_TO_IMAGE: "workers.tasks.image_gen.text_to_image",
-        GenerationType.IMAGE_TO_IMAGE: "workers.tasks.image_gen.image_to_image",
         GenerationType.TEXT_TO_VIDEO: "workers.tasks.video_gen.text_to_video",
         GenerationType.IMAGE_TO_VIDEO: "workers.tasks.video_gen.image_to_video",
-        GenerationType.VIDEO_UPSCALE: "workers.tasks.upscale.video_upscale",
+        GenerationType.VIDEO_ENHANCE: "workers.tasks.video_gen.video_enhance",
+        GenerationType.TEXT_TO_IMAGE: "workers.tasks.image_gen.text_to_image",
+        GenerationType.IMAGE_TO_IMAGE: "workers.tasks.image_gen.image_to_image",
+        GenerationType.TEXT_TO_AUDIO: "workers.tasks.audio_gen.text_to_audio",
     }
 
     task_name = route_map.get(gen_type)

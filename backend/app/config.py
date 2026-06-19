@@ -44,7 +44,25 @@ class Settings(BaseSettings):
 
     # ── ComfyUI ──────────────────────────────────────────────────────────────
     comfyui_url: str = "http://comfyui:8188"
-    comfyui_timeout: int = 300
+    comfyui_timeout: int = 600
+    comfyui_engine: str = "auto"
+
+    # ── Pollinations (cloud video fallback) ───────────────────────────────────
+    pollinations_api_key: str = ""
+
+    @property
+    def true_video_enabled(self) -> bool:
+        return bool(self.pollinations_api_key.strip())
+
+    # ── Local storage (development) ──────────────────────────────────────────
+    # Directory inside the `api`/`worker` container where outputs will be
+    # written and served by the API. This path is relative to the application
+    # root ("/app"). For host access, the backend source is bind-mounted so
+    # files here appear under the repo's `backend/` directory on the host.
+    local_output_dir: str = "storage/output"
+    api_base_url: str = "http://localhost:8000"
+    # Used by worker/ComfyUI to fetch uploaded assets inside Docker network
+    internal_api_url: str = "http://api:8000"
 
     # ── GPU ──────────────────────────────────────────────────────────────────
     gpu_count: int = 1

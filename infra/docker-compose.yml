@@ -34,6 +34,9 @@ services:
       export PGPASSWORD=\"$${POSTGRES_PASSWORD}\";
       psql -h \"$${POSTGRES_HOST}\" -U \"$${POSTGRES_USER}\" -d postgres -c \"CREATE DATABASE video_creator;\" || true;
       psql -h \"$${POSTGRES_HOST}\" -U \"$${POSTGRES_USER}\" -d postgres -c \"CREATE DATABASE vcreator;\" || true;
+      psql -h \"$${POSTGRES_HOST}\" -U \"$${POSTGRES_USER}\" -d video_creator -c \"ALTER TYPE generationtype ADD VALUE IF NOT EXISTS 'text_to_image';\" || true;
+      psql -h \"$${POSTGRES_HOST}\" -U \"$${POSTGRES_USER}\" -d video_creator -c \"ALTER TYPE generationtype ADD VALUE IF NOT EXISTS 'image_to_image';\" || true;
+      psql -h \"$${POSTGRES_HOST}\" -U \"$${POSTGRES_USER}\" -d video_creator -c \"ALTER TYPE generationtype ADD VALUE IF NOT EXISTS 'text_to_audio';\" || true;
       "
 
   redis:
@@ -88,12 +91,16 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
       - COMFYUI_URL=http://comfyui:8188
+      - COMFYUI_TIMEOUT=600
+      - POLLINATIONS_API_KEY=${POLLINATIONS_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - ENVIRONMENT=development
       - AUTH_BYPASS_ENABLED=${AUTH_BYPASS_ENABLED:-true}
       - AUTH_BYPASS_EMAIL=${AUTH_BYPASS_EMAIL:-dev@local.app}
       - AUTH_BYPASS_USERNAME=${AUTH_BYPASS_USERNAME:-dev_bypass}
       - AUTH_BYPASS_SUPERUSER=${AUTH_BYPASS_SUPERUSER:-true}
+    env_file:
+      - ../.env
     ports:
       - "8000:8000"
     depends_on:
@@ -128,6 +135,14 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
       - COMFYUI_URL=http://comfyui:8188
+      - COMFYUI_TIMEOUT=600
+      - POLLINATIONS_API_KEY=${POLLINATIONS_API_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - ENVIRONMENT=development
+      - AUTH_BYPASS_ENABLED=${AUTH_BYPASS_ENABLED:-true}
+      - AUTH_BYPASS_EMAIL=${AUTH_BYPASS_EMAIL:-dev@local.app}
+      - AUTH_BYPASS_USERNAME=${AUTH_BYPASS_USERNAME:-dev_bypass}
+      - AUTH_BYPASS_SUPERUSER=${AUTH_BYPASS_SUPERUSER:-true}
     depends_on:
       db-init:
         condition: service_completed_successfully
@@ -137,6 +152,7 @@ services:
         condition: service_healthy
     volumes:
       - ../backend:/app
+      - ./local_shorts:/app/local_shorts
     command: celery -A workers.celery_app worker --loglevel=info --concurrency=2 -Q image_gen,video_gen,upscale,default
 
   celery-beat:
@@ -150,9 +166,24 @@ services:
         NO_PROXY: ${NO_PROXY}
     restart: unless-stopped
     environment:
+      - DATABASE_URL=postgresql+asyncpg://vcreator:vcreator_secret@postgres:5432/video_creator
+      - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
+      - COMFYUI_URL=http://comfyui:8188
+      - COMFYUI_TIMEOUT=600
+      - POLLINATIONS_API_KEY=${POLLINATIONS_API_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - ENVIRONMENT=development
     depends_on:
-      - redis
+      db-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     command: celery -A workers.celery_app beat --loglevel=info
 
   flower:
@@ -165,18 +196,35 @@ services:
     depends_on:
       - redis
 
-  # ─── ComfyUI ─────────────────────────────────────────────────────────────────
+  # ─── ComfyUI (local AnimateDiff models) ─────────────────────────────────────
   comfyui:
     build:
       context: ../comfyui
       dockerfile: Dockerfile
+      args:
+        TORCH_INDEX: ${TORCH_INDEX:-https://download.pytorch.org/whl/cpu}
     restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      - COMFYUI_ENGINE=${COMFYUI_ENGINE:-auto}
+      - AUTO_DOWNLOAD_MODELS=${AUTO_DOWNLOAD_MODELS:-false}
+      - POLLINATIONS_API_KEY=${POLLINATIONS_API_KEY:-}
+      - HF_TOKEN=${HF_TOKEN:-}
     ports:
       - "8188:8188"
     volumes:
-      - comfyui_models:/app/models
+      - ../comfyui:/app
+      - ../comfyui/models:/app/models
       - comfyui_output:/app/output
-      - ../comfyui/workflows:/app/workflows
+    # Uncomment for NVIDIA GPU (requires Docker Desktop GPU support):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
   # ─── Frontend ────────────────────────────────────────────────────────────────
   frontend:
@@ -210,5 +258,4 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
-  comfyui_models:
   comfyui_output:

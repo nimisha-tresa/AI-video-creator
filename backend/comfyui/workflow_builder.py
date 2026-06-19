@@ -10,6 +10,49 @@ class WorkflowBuilder:
     Each method returns a dict suitable for the /prompt endpoint.
     """
 
+    def attach_mock_metadata(
+        self,
+        graph: dict[str, Any],
+        *,
+        model_id: str,
+        visual_theme: str,
+        output_kind: str,
+        pollinations_model: str | None = None,
+        source_asset_url: str | None = None,
+        source_asset_type: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        fps: int | None = None,
+        duration_sec: float | None = None,
+    ) -> dict[str, Any]:
+        graph["mock_meta"] = {
+            "class_type": "MockModelInfo",
+            "inputs": {
+                "model_id": model_id,
+                "visual_theme": visual_theme,
+                "output_kind": output_kind,
+                "pollinations_model": pollinations_model or "",
+                "source_asset_url": source_asset_url or "",
+                "source_asset_type": source_asset_type or "",
+                "width": int(width or 0),
+                "height": int(height or 0),
+                "fps": int(fps or 0),
+                "duration_sec": float(duration_sec or 0),
+            },
+        }
+        return graph
+
+    def build_mock_audio(
+        self,
+        prompt: str,
+        model_id: str = "eleven-v3",
+        visual_theme: str = "eleven",
+    ) -> dict[str, Any]:
+        graph: dict[str, Any] = {
+            "1": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["1", 1]}},
+        }
+        return self.attach_mock_metadata(graph, model_id=model_id, visual_theme=visual_theme, output_kind="audio")
+
     # ── SDXL Text-to-Image ────────────────────────────────────────────────────
     def build_sdxl_txt2img(
         self,
@@ -212,6 +255,25 @@ class WorkflowBuilder:
             "save": {"class_type": "SaveAnimatedWEBP", "inputs": {
                 "images": ["upscale", 0], "filename_prefix": "upscaled",
                 "fps": 24, "lossless": False, "quality": 90, "method": "default",
+            }},
+        }
+
+    # ── Video Enhancement ────────────────────────────────────────────────────
+    def build_video_enhance(
+        self,
+        prompt: str,
+        negative_prompt: str = "",
+        strength: float = 0.8,
+    ) -> dict[str, Any]:
+        """
+        Enhance an uploaded video with a prompt-driven style/effect.
+        For mock: returns a simple workflow. In production, uses real enhancement models.
+        """
+        return {
+            "prompt_text": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["1", 1]}},
+            "save": {"class_type": "SaveAnimatedWEBP", "inputs": {
+                "images": [["prompt_text", 0]], "filename_prefix": "enhanced",
+                "fps": 12, "lossless": False, "quality": 85, "method": "default",
             }},
         }
 

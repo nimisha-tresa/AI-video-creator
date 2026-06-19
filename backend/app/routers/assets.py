@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
+from minio.error import S3Error
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,3 +98,18 @@ async def delete_asset(
         pass
     await db.delete(asset)
     await db.commit()
+
+
+@router.get("/internal_assets/{key}")
+async def internal_asset(key: str):
+    """Internal proxy to stream an asset from MinIO for other services within
+    the Docker network (e.g. ComfyUI). This is intentionally unprotected and
+    should only be used by internal services.
+    """
+    client = storage.get_minio_client()
+    try:
+        obj = client.get_object(settings.minio_bucket_assets, key)
+    except S3Error:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    return StreamingResponse(obj, media_type="application/octet-stream")

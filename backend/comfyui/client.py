@@ -45,7 +45,7 @@ class ComfyUIClient:
     async def _wait_for_completion(
         self, prompt_id: str, on_progress: Callable[[float], None] | None = None
     ) -> dict[str, Any]:
-        ws_url = self.base_url.replace("http", "ws") + f"/ws?clientId={self.client_id}"
+        ws_url = self.base_url.replace("http", "ws") + f"/ws?clientId={self.client_id}&promptId={prompt_id}"
         async with websockets.connect(ws_url) as ws:
             while True:
                 raw = await ws.recv()
@@ -70,18 +70,23 @@ class ComfyUIClient:
                     data = msg.get("data", {})
                     raise RuntimeError(f"ComfyUI execution error: {data}")
 
-    async def _download_output(self, output: dict) -> bytes:
-        """Download the first image or video from the ComfyUI output node."""
+    async def _download_output(self, output: dict, prompt_id: str | None = None) -> bytes:
+        """Download the first image, video, or audio from the ComfyUI output node."""
         images = output.get("images", [])
         videos = output.get("gifs", output.get("videos", []))
-        items = images or videos
+        audio = output.get("audio", [])
+        items = images or videos or audio
         if not items:
             raise RuntimeError("No output produced by ComfyUI workflow")
 
         item = items[0]
-        filename = item["filename"]
+        filename = item.get("filename", "output")
         subfolder = item.get("subfolder", "")
+        item_prompt_id = item.get("prompt_id") or prompt_id
         params = f"filename={filename}&subfolder={subfolder}&type=output"
+        if item_prompt_id:
+            params += f"&prompt_id={item_prompt_id}"
+        params += f"&clientId={self.client_id}"
         resp = await self._http.get(f"/view?{params}")
         resp.raise_for_status()
         return resp.content
@@ -113,21 +118,39 @@ class ComfyUIClient:
 
         # Detect output type
         is_video = bool(output.get("gifs") or output.get("videos"))
-        content_type = "video/mp4" if is_video else "image/png"
-        ext = ".mp4" if is_video else ".png"
-        logger.info("Output type detected", is_video=is_video, content_type=content_type)
+        is_audio = bool(output.get("audio"))
+        if is_video:
+            content_type, ext = "video/mp4", ".mp4"
+        elif is_audio:
+            content_type, ext = "audio/mpeg", ".mp3"
+        else:
+            content_type, ext = "image/png", ".png"
+        logger.info("Output type detected", is_video=is_video, is_audio=is_audio, content_type=content_type)
 
         try:
-            data = await self._download_output(output)
+            data = await self._download_output(output, prompt_id=prompt_id)
             logger.info("Output downloaded successfully", size_mb=len(data) / 1024 / 1024)
         except Exception as e:
             logger.error("Failed to download output from ComfyUI", error_type=type(e).__name__, error=str(e))
             raise
-        key = upload_bytes(data, f"output{ext}", content_type, bucket=settings.minio_bucket_output)
 
-        from app.services.storage import get_presigned_url
+        # Save output locally inside the backend workspace (mounted into the
+        # container at /app). This makes outputs directly accessible on the
+        # host filesystem during development.
+        import os
+        from pathlib import Path
 
-        url = get_presigned_url(key, bucket=settings.minio_bucket_output)
+        local_dir = Path(settings.local_output_dir)
+        # Ensure directory exists (relative to app root)
+        local_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{uuid.uuid4().hex}{ext}"
+        filepath = local_dir / filename
+        with open(filepath, "wb") as f:
+            f.write(data)
+
+        # Expose via API proxy: http://localhost:8000/local_outputs/{filename}
+        url = f"{settings.api_base_url.rstrip('/')}/local_outputs/{filename}"
+        key = str(filename)
 
         # Extract seed if present (from KSampler node)
         seed = None

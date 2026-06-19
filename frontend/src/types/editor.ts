@@ -34,4 +34,6 @@ export interface GenerationJob {
   outputUrl?: string | null
   errorMessage?: string | null
   createdAt: string
+  modelId?: string
+  outputKind?: 'video' | 'image' | 'audio'
 }

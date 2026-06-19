@@ -33,7 +33,15 @@ export function GenerationPanel({ jobs, onQueueJob, isQueueing, queueError }: Ge
       >
         <label>
           Prompt
-          <textarea value={prompt} onChange={event => setPrompt(event.target.value)} rows={4} required />
+          <textarea
+            value={prompt}
+            onChange={event => setPrompt(event.target.value)}
+            rows={4}
+            required
+            dir="ltr"
+            lang="en"
+            spellCheck
+          />
         </label>
 
         <div className="gen-row">
@@ -60,8 +68,8 @@ export function GenerationPanel({ jobs, onQueueJob, isQueueing, queueError }: Ge
           </label>
         </div>
 
-        <button className="primary-btn" type="submit" disabled={isQueueing}>
-          {isQueueing ? 'Queueing…' : 'Queue Generation'}
+        <button className="primary-btn" type="submit" disabled={isQueueing || !prompt.trim()}>
+          {isQueueing ? 'Generating…' : 'Generate Video'}
         </button>
 
         {queueError ? <p className="error-text">{queueError}</p> : null}
@@ -82,9 +90,12 @@ export function GenerationPanel({ jobs, onQueueJob, isQueueing, queueError }: Ge
               </div>
             </div>
             {job.outputUrl ? (
-              <a className="job-output-link" href={job.outputUrl} target="_blank" rel="noreferrer">
-                Open output
-              </a>
+              <div className="job-output">
+                <video className="job-output__video" src={job.outputUrl} controls playsInline />
+                <a className="job-output-link" href={job.outputUrl} target="_blank" rel="noreferrer">
+                  Download output
+                </a>
+              </div>
             ) : null}
             {job.errorMessage ? <p className="upload-item__error">{job.errorMessage}</p> : null}
             <p className="job-meta">

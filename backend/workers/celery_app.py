@@ -11,6 +11,7 @@ celery_app = Celery(
     include=[
         "workers.tasks.image_gen",
         "workers.tasks.video_gen",
+        "workers.tasks.audio_gen",
         "workers.tasks.upscale",
         "workers.tasks.dispatch",
     ],

@@ -15,8 +15,8 @@ class GenerationType(str, enum.Enum):
     IMAGE_TO_IMAGE = "image_to_image"
     TEXT_TO_VIDEO = "text_to_video"
     IMAGE_TO_VIDEO = "image_to_video"
-    VIDEO_UPSCALE = "video_upscale"
-    INPAINT = "inpaint"
+    VIDEO_ENHANCE = "video_enhance"
+    TEXT_TO_AUDIO = "text_to_audio"
 
 
 class GenerationStatus(str, enum.Enum):
@@ -37,9 +37,14 @@ class Generation(Base, TimestampMixin):
         ForeignKey("projects.id", ondelete="SET NULL"), index=True, nullable=True
     )
 
-    type: Mapped[GenerationType] = mapped_column(Enum(GenerationType), nullable=False)
+    type: Mapped[GenerationType] = mapped_column(
+        Enum(GenerationType, values_callable=lambda x: [e.value for e in x], native_enum=False),
+        nullable=False,
+    )
     status: Mapped[GenerationStatus] = mapped_column(
-        Enum(GenerationStatus), default=GenerationStatus.PENDING, index=True
+        Enum(GenerationStatus, values_callable=lambda x: [e.value for e in x], native_enum=False),
+        default=GenerationStatus.PENDING,
+        index=True,
     )
 
     # Prompt

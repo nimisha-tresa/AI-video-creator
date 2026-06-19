@@ -68,6 +68,17 @@ def update_generation_sync(
             await session.commit()
             return gen.owner_id
 
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    # If we're already inside an event loop, schedule the update as a background
+    # task instead of calling run_until_complete which would raise.
+    if loop and loop.is_running():
+        asyncio.create_task(_update())
+        return None
+
     return asyncio.get_event_loop().run_until_complete(_update())
 
 

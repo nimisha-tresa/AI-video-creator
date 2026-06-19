@@ -9,44 +9,27 @@ from app.models.generation import GenerationStatus, GenerationType
 
 
 class GenerationParams(BaseModel):
-    # SDXL / Image
-    steps: int = Field(default=30, ge=1, le=150)
-    cfg_scale: float = Field(default=7.0, ge=1.0, le=30.0)
-    sampler: str = "dpmpp_2m"
-    scheduler: str = "karras"
-    seed: int | None = None
-
-    # AnimateDiff / Video
-    num_frames: int = Field(default=16, ge=8, le=128)
-    fps: int = Field(default=8, ge=4, le=30)
-    motion_module: str = "mm_sd_v15_v2.ckpt"
-    motion_scale: float = Field(default=1.0, ge=0.5, le=2.0)
-
-    # IP-Adapter
-    ip_adapter_enabled: bool = False
-    ip_adapter_scale: float = Field(default=0.6, ge=0.0, le=1.0)
-    ip_adapter_image_id: str | None = None  # Asset ID for reference image
-
-    # Dimensions
-    width: int = Field(default=1024, ge=256, le=2048)
-    height: int = Field(default=576, ge=256, le=2048)
-
-    # ControlNet (optional)
-    controlnet_enabled: bool = False
-    controlnet_type: str = "openpose"
-    controlnet_scale: float = Field(default=0.8, ge=0.0, le=2.0)
-    controlnet_image_id: str | None = None
-
+    # Video processing
+    num_frames: int = Field(default=16, ge=8, le=192)
+    fps: int = Field(default=12, ge=4, le=30)
+    width: int = Field(default=720, ge=256, le=1280)
+    height: int = Field(default=1280, ge=256, le=1920)  # Portrait for Shorts
+    
+    # Prompt/style parameters
+    strength: float = Field(default=0.8, ge=0.0, le=1.0)  # How strong to apply effect
+    
     extra: dict[str, Any] = {}
 
 
 class GenerationCreate(BaseModel):
-    type: GenerationType
+    type: GenerationType | None = None
+    model_id: str | None = None
     prompt: str | None = None
     negative_prompt: str | None = None
     params: GenerationParams = GenerationParams()
     project_id: str | None = None
     source_asset_id: str | None = None  # img2img / img2video source
+    clear_previous: bool = True  # remove older generations + output files before creating
 
 
 class GenerationRead(BaseModel):

@@ -41,4 +41,7 @@ pnpm-debug.log*
 # --- Data / runtime artifacts ---
 backend/uploads/
 backend/output/
+backend/storage/
+backend/query
 tmp/
+comfyui/models/

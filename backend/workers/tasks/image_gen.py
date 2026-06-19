@@ -36,6 +36,7 @@ def _run_image_generation(generation_id: str, workflow_type: str) -> None:
 
     owner_id = gen.owner_id
     params = gen.params
+    extra = params.get("extra", {}) if isinstance(params.get("extra"), dict) else {}
 
     update_generation_sync(generation_id, status=GenerationStatus.PROCESSING, progress=0.05)
     publish_progress(owner_id, generation_id, {"status": "processing", "progress": 0.05})
@@ -67,6 +68,13 @@ def _run_image_generation(generation_id: str, workflow_type: str) -> None:
                     cfg=params.get("cfg_scale", 7.0),
                     denoise=params.get("denoise", 0.75),
                 )
+
+            workflow = builder.attach_mock_metadata(
+                workflow,
+                model_id=extra.get("model_id", "flux-2-max"),
+                visual_theme=extra.get("visual_theme", "flux"),
+                output_kind="image",
+            )
 
             async def _run():
                 async with ComfyUIClient() as client:

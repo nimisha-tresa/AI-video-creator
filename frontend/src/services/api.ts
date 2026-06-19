@@ -40,7 +40,7 @@ export interface UploadProgress {
   progress: number
 }
 
-export type GenerationType = 'text_to_image' | 'image_to_image' | 'text_to_video' | 'image_to_video' | 'video_upscale' | 'inpaint'
+export type GenerationType = 'text_to_image' | 'image_to_image' | 'text_to_video' | 'image_to_video' | 'video_upscale' | 'video_enhance' | 'text_to_audio'
 export type GenerationStatus = 'pending' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
 
 export interface BackendGeneration {
@@ -67,12 +67,48 @@ export interface BackendGeneration {
 }
 
 export interface CreateGenerationPayload {
-  type: GenerationType
+  type?: GenerationType
+  model_id?: string
   prompt?: string
   negative_prompt?: string
   params?: Record<string, unknown>
   project_id?: string
   source_asset_id?: string
+  clear_previous?: boolean
+}
+
+export interface StudioModel {
+  id: string
+  name: string
+  provider: string
+  category: 'video' | 'image' | 'audio' | 'llm'
+  generation_type: string
+  description: string
+  badge: string | null
+  compatible: boolean
+  preset: Record<string, unknown>
+}
+
+export async function listModels(): Promise<StudioModel[]> {
+  const response = await fetch(`${API_BASE_URL}/models/`)
+  return parseResponse<StudioModel[]>(response)
+}
+
+export interface StudioConfig {
+  true_video_enabled: boolean
+  video_engine: string
+  engine_chain?: string[]
+  pollinations_ready?: boolean
+  models_ready?: boolean
+  local_engine?: boolean
+  engine_mode?: string
+  setup_url: string
+  local_models?: Record<string, string>
+}
+
+export async function fetchStudioConfig(): Promise<StudioConfig> {
+  const response = await fetch(`${API_BASE_URL}/models/studio-config`)
+  return parseResponse<StudioConfig>(response)
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -120,38 +156,53 @@ export async function register(email: string, username: string, password: string
   return parseResponse<UserProfile>(response)
 }
 
-export async function fetchMe(token: string): Promise<UserProfile> {
+function authHeaders(token?: string | null): Record<string, string> {
+  if (!token) return {}
+  return { Authorization: `Bearer ${token}` }
+}
+
+export async function fetchMe(token?: string | null): Promise<UserProfile> {
   const response = await fetch(`${API_BASE_URL}/auth/me`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: authHeaders(token),
   })
   return parseResponse<UserProfile>(response)
 }
 
-export async function listAssets(token: string): Promise<BackendAsset[]> {
+export async function listAssets(token?: string | null): Promise<BackendAsset[]> {
   const response = await fetch(`${API_BASE_URL}/assets/`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: authHeaders(token),
   })
   return parseResponse<BackendAsset[]>(response)
 }
 
-export async function listGenerations(token: string): Promise<BackendGeneration[]> {
+export async function listGenerations(token?: string | null): Promise<BackendGeneration[]> {
   const response = await fetch(`${API_BASE_URL}/generations/`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: authHeaders(token),
   })
   return parseResponse<BackendGeneration[]>(response)
 }
 
+export async function clearGenerations(token?: string | null): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/generations/`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!response.ok && response.status !== 204) {
+    await parseResponse(response)
+  }
+}
+
 export async function createGeneration(
-  token: string,
+  token: string | null | undefined,
   payload: CreateGenerationPayload,
 ): Promise<BackendGeneration> {
   const response = await fetch(`${API_BASE_URL}/generations/`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...authHeaders(token),
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ clear_previous: true, ...payload }),
   })
   return parseResponse<BackendGeneration>(response)
 }

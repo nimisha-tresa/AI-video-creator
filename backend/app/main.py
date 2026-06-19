@@ -10,7 +10,9 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.database import engine, init_db_schema
 from app.models import *  # noqa: F401,F403 — ensure all models are imported for Alembic
-from app.routers import assets, auth, generations, projects, ws
+from app.routers import assets, auth, generations, models, projects, ws
+from app.routers import outputs
+from app.routers.outputs import get_local_output
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -55,15 +57,21 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(auth.router)
+app.include_router(models.router)
 app.include_router(projects.router)
 app.include_router(generations.router)
 app.include_router(assets.router)
 app.include_router(ws.router)
+app.include_router(outputs.router)
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "environment": settings.environment}
+
+
+# Top-level alias so generated output URLs (/local_outputs/{file}) resolve correctly.
+app.add_api_route("/local_outputs/{filename}", get_local_output, methods=["GET"], tags=["outputs"])
 
 
 @app.on_event("startup")
