@@ -79,19 +79,17 @@ services:
       dockerfile: Dockerfile
       args:
         INSTALL_SYSTEM_DEPS: "false"
-        HTTP_PROXY: ${HTTP_PROXY}
-        HTTPS_PROXY: ${HTTPS_PROXY}
-        NO_PROXY: ${NO_PROXY}
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgresql+asyncpg://vcreator:vcreator_secret@postgres:5432/video_creator
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
       - COMFYUI_URL=http://comfyui:8188
-      - COMFYUI_TIMEOUT=600
+      - COMFYUI_TIMEOUT=180
       - POLLINATIONS_API_KEY=${POLLINATIONS_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - ENVIRONMENT=development
@@ -123,19 +121,17 @@ services:
       dockerfile: Dockerfile
       args:
         INSTALL_SYSTEM_DEPS: "false"
-        HTTP_PROXY: ${HTTP_PROXY}
-        HTTPS_PROXY: ${HTTPS_PROXY}
-        NO_PROXY: ${NO_PROXY}
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgresql+asyncpg://vcreator:vcreator_secret@postgres:5432/video_creator
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
       - COMFYUI_URL=http://comfyui:8188
-      - COMFYUI_TIMEOUT=600
+      - COMFYUI_TIMEOUT=180
       - POLLINATIONS_API_KEY=${POLLINATIONS_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - ENVIRONMENT=development
@@ -161,19 +157,17 @@ services:
       dockerfile: Dockerfile
       args:
         INSTALL_SYSTEM_DEPS: "false"
-        HTTP_PROXY: ${HTTP_PROXY}
-        HTTPS_PROXY: ${HTTPS_PROXY}
-        NO_PROXY: ${NO_PROXY}
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgresql+asyncpg://vcreator:vcreator_secret@postgres:5432/video_creator
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
       - COMFYUI_URL=http://comfyui:8188
-      - COMFYUI_TIMEOUT=600
+      - COMFYUI_TIMEOUT=180
       - POLLINATIONS_API_KEY=${POLLINATIONS_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - ENVIRONMENT=development
@@ -214,9 +208,10 @@ services:
     ports:
       - "8188:8188"
     volumes:
-      - ../comfyui:/app
       - ../comfyui/models:/app/models
+      - ../comfyui/workflows:/app/workflows
       - comfyui_output:/app/output
+    command: ["/app/entrypoint.sh"]
     # Uncomment for NVIDIA GPU (requires Docker Desktop GPU support):
     # deploy:
     #   resources:

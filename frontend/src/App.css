@@ -902,6 +902,86 @@ textarea {
   color: #9fb0d9;
 }
 
+.studio-youtube {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid #24304d;
+}
+
+.studio-youtube__row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.studio-youtube__input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #314369;
+  background: #0f1628;
+  color: #e8eeff;
+  font-size: 0.92rem;
+}
+
+.studio-youtube__input:focus {
+  outline: 2px solid #4a6cf7;
+  border-color: transparent;
+}
+
+.studio-video-modes {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.studio-video-modes__label {
+  font-size: 0.82rem;
+  color: #9fb0d9;
+  font-weight: 600;
+}
+
+.studio-video-modes__tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.studio-video-mode {
+  display: grid;
+  gap: 4px;
+  padding: 10px 8px;
+  border-radius: 10px;
+  border: 1px solid #314369;
+  background: #0a1020;
+  color: #c8d4f0;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.studio-video-mode:hover {
+  border-color: #4a6cf7;
+}
+
+.studio-video-mode--active {
+  border-color: #4a6cf7;
+  background: #121a30;
+}
+
+.studio-video-mode strong {
+  font-size: 0.82rem;
+}
+
+.studio-video-mode span {
+  font-size: 0.72rem;
+  color: #7a8fb8;
+  line-height: 1.3;
+}
+
 .studio-preview__stage {
   min-height: 360px;
   background: #060a14;
@@ -1354,6 +1434,11 @@ textarea {
   place-items: center;
   font-size: 1.2rem;
   color: #6b7fa8;
+}
+
+.studio-preview__empty-icon--error {
+  border-color: #7a3040;
+  color: #f07178;
 }
 
 .studio-preview__loading {

@@ -86,6 +86,7 @@ export default function App() {
       generations.map(g => ({
         ...generationToJob(g),
         createdAt: formatRelativeTime(g.created_at),
+        createdAtIso: g.created_at,
       })),
     )
   }

@@ -8,7 +8,14 @@ import time
 
 from aiohttp import web
 
-from prompt_engine import analyze_prompt, generate_prompt_audio, generate_prompt_image, generate_prompt_video, true_video_enabled
+from prompt_engine import (
+    analyze_prompt,
+    generate_prompt_audio,
+    generate_prompt_image,
+    generate_prompt_video,
+    generate_video_from_source,
+    true_video_enabled,
+)
 
 SESSIONS: dict[str, dict] = {}
 PROMPT_META: dict[str, dict] = {}
@@ -23,6 +30,8 @@ def _extract_from_workflow(workflow: dict) -> dict:
     output_kind = "video"
     duration = 4.0
     fps = 24
+    source_asset_url = ""
+    source_asset_type = ""
 
     for node in workflow.values():
         if not isinstance(node, dict):
@@ -39,6 +48,16 @@ def _extract_from_workflow(workflow: dict) -> dict:
             theme = inputs.get("visual_theme", theme)
             output_kind = inputs.get("output_kind", output_kind)
             pollinations_model = inputs.get("pollinations_model", pollinations_model)
+            source_asset_url = inputs.get("source_asset_url", source_asset_url) or source_asset_url
+            source_asset_type = inputs.get("source_asset_type", source_asset_type) or source_asset_type
+            if inputs.get("width"):
+                width = int(inputs.get("width", width))
+            if inputs.get("height"):
+                height = int(inputs.get("height", height))
+            if inputs.get("fps"):
+                fps = int(inputs.get("fps", fps))
+            if inputs.get("duration_sec"):
+                duration = float(inputs.get("duration_sec", duration))
         elif ctype == "EmptyLatentImage":
             width = int(inputs.get("width", width))
             height = int(inputs.get("height", height))
@@ -58,6 +77,8 @@ def _extract_from_workflow(workflow: dict) -> dict:
         "output_kind": output_kind,
         "duration": duration,
         "fps": fps,
+        "source_asset_url": source_asset_url,
+        "source_asset_type": source_asset_type,
         "analysis": analysis,
     }
 
@@ -69,6 +90,23 @@ async def _resolve_output(meta: dict) -> tuple[bytes, str]:
     kind = meta.get("output_kind", "video")
     duration = float(meta.get("duration", 4.0))
     seed = hash(prompt) % 999_999
+    source_url = (meta.get("source_asset_url") or "").strip()
+    source_type = (meta.get("source_asset_type") or "").strip()
+
+    if source_url and kind == "video":
+        path = await generate_video_from_source(
+            source_url,
+            prompt,
+            width=w,
+            height=h,
+            duration=duration,
+            fps=int(meta.get("fps", 24)),
+            seed=seed,
+            model_id=meta.get("model_id"),
+            pollinations_model=meta.get("pollinations_model"),
+            source_type=source_type or "video",
+        )
+        return path.read_bytes(), "video/mp4"
 
     if kind == "image":
         path = await generate_prompt_image(prompt, w, h, seed=seed)

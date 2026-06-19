@@ -12,6 +12,7 @@ from app.models.asset import Asset, AssetType
 from app.models.generation import Generation, GenerationStatus, GenerationType
 from app.models.user import User
 from app.schemas.generation import GenerationCreate, GenerationRead
+from app.services.generation_stale import mark_stale_generations_failed
 
 settings = get_settings()
 
@@ -31,7 +32,9 @@ async def list_generations(
         q = q.where(Generation.project_id == project_id)
     q = q.order_by(Generation.created_at.desc()).offset(skip).limit(limit)
     result = await db.execute(q)
-    return result.scalars().all()
+    generations = result.scalars().all()
+    await mark_stale_generations_failed(db, generations)
+    return generations
 
 
 @router.post("/", response_model=GenerationRead, status_code=status.HTTP_201_CREATED)
@@ -156,6 +159,7 @@ async def get_generation(
     gen = result.scalar_one_or_none()
     if not gen:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation not found")
+    await mark_stale_generations_failed(db, [gen])
     return gen
 
 

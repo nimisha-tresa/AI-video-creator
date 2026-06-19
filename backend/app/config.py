@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # ── ComfyUI ──────────────────────────────────────────────────────────────
     comfyui_url: str = "http://comfyui:8188"
-    comfyui_timeout: int = 600
+    comfyui_timeout: int = 180
     comfyui_engine: str = "auto"
 
     # ── Pollinations (cloud video fallback) ───────────────────────────────────

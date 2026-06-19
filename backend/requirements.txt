@@ -41,5 +41,6 @@ python-dotenv==1.0.1
 structlog==24.1.0
 tenacity==8.3.0
 ulid-py==1.1.0
+yt-dlp>=2024.4.9
 
 moviepy

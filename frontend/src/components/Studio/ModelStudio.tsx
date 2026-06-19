@@ -3,11 +3,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GenerationJob } from '@/types/editor'
 import type { ModelCategory, StudioModel } from '@/types/models'
 import { CATEGORY_ICONS } from '@/types/models'
-import { clearGenerations, createGeneration, listModels, uploadAsset, type BackendAsset, type BackendGeneration } from '@/services/api'
+import { DEFAULT_MODEL_BY_MODE, VIDEO_GEN_MODES, type VideoGenMode } from '@/types/videoModes'
+import { clearGenerations, createGeneration, downloadYouTubeAsset, listModels, uploadAsset, type BackendAsset, type BackendGeneration } from '@/services/api'
 
 import { PromptTextarea, type PromptTextareaHandle } from './PromptTextarea'
 
 const MAX_NUM_FRAMES = 192
+/** Match backend COMFYUI_TIMEOUT (3 min) + 60s buffer */
+const GENERATION_TIMEOUT_MS = 4 * 60 * 1000
+
+function isActiveStatus(status: GenerationJob['status']): boolean {
+  return status === 'pending' || status === 'queued' || status === 'processing'
+}
+
+function isJobTimedOut(job: GenerationJob): boolean {
+  if (!isActiveStatus(job.status) || !job.createdAtIso) return false
+  return Date.now() - new Date(job.createdAtIso).getTime() > GENERATION_TIMEOUT_MS
+}
+
+function isJobFailed(job: GenerationJob | null | undefined): boolean {
+  if (!job) return false
+  return job.status === 'failed' || job.status === 'cancelled' || isJobTimedOut(job)
+}
 
 interface ModelStudioProps {
   jobs: GenerationJob[]
@@ -35,6 +52,7 @@ function generationToJob(generation: BackendGeneration): GenerationJob {
     outputUrl: generation.output_url,
     errorMessage: generation.error_message,
     createdAt: generation.created_at,
+    createdAtIso: generation.created_at,
     modelId,
     outputKind: typeStr.includes('audio') ? 'audio' : typeStr.includes('image') ? 'image' : 'video',
   }
@@ -49,8 +67,8 @@ export function ModelStudio({
   isReady,
 }: ModelStudioProps) {
   const [models, setModels] = useState<StudioModel[]>([])
-  const [category, setCategory] = useState<ModelCategory | 'video'>('video')
-  const [selectedModelId, setSelectedModelId] = useState('veo-3.1')
+  const [category, setCategory] = useState<ModelCategory | 'all'>('video')
+  const [selectedModelId, setSelectedModelId] = useState('ltx-video')
   const [promptDraft, setPromptDraft] = useState('')
   const [promptSeed, setPromptSeed] = useState('')
   const promptControlRef = useRef<PromptTextareaHandle>(null)
@@ -61,6 +79,8 @@ export function ModelStudio({
   const [uploadedAsset, setUploadedAsset] = useState<BackendAsset | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [videoMode, setVideoMode] = useState<VideoGenMode>('t2v')
   const uploadInputRef = useRef<HTMLInputElement>(null)
 
   const handlePromptTextChange = useCallback((text: string) => {
@@ -71,15 +91,45 @@ export function ModelStudio({
     void listModels().then(setModels).catch(console.error)
   }, [])
 
-  const filteredModels = useMemo(() => {
-    if (category === 'all') return models
-    return models.filter(m => m.category === category)
-  }, [models, category])
-
   const selectedModel = useMemo(
     () => models.find(m => m.id === selectedModelId) ?? models.find(m => m.category === 'video') ?? models[0] ?? null,
     [models, selectedModelId],
   )
+
+  const isVideoModel = selectedModel?.category === 'video'
+
+  const filteredModels = useMemo(() => {
+    let list = category === 'all' ? models : models.filter(m => m.category === category)
+    if (isVideoModel) {
+      if (videoMode === 't2v') {
+        list = list.filter(m => m.generation_type === 'text_to_video')
+      } else if (videoMode === 'i2v') {
+        list = list.filter(m => m.generation_type === 'image_to_video')
+      } else {
+        list = list.filter(m => m.category === 'video')
+      }
+    }
+    return list
+  }, [models, category, videoMode, isVideoModel])
+
+  useEffect(() => {
+    if (!isVideoModel) return
+    const preferred = DEFAULT_MODEL_BY_MODE[videoMode]
+    if (models.some(m => m.id === preferred)) {
+      setSelectedModelId(preferred)
+    } else if (filteredModels.length > 0 && !filteredModels.some(m => m.id === selectedModelId)) {
+      setSelectedModelId(filteredModels[0].id)
+    }
+    if (videoMode === 't2v') {
+      setUploadedAsset(null)
+      setYoutubeUrl('')
+    } else if (videoMode === 'i2v' && uploadedAsset?.type === 'video') {
+      setUploadedAsset(null)
+      setYoutubeUrl('')
+    } else if (videoMode === 'v2v' && uploadedAsset?.type === 'image') {
+      setUploadedAsset(null)
+    }
+  }, [videoMode, isVideoModel, models, filteredModels, selectedModelId, uploadedAsset?.type])
 
   const previewJob = useMemo(() => {
     if (previewJobId) {
@@ -90,7 +140,15 @@ export function ModelStudio({
   }, [jobs, previewJobId])
 
   async function handleUploadFile(file: File) {
-    if (!file.type.startsWith('video/')) {
+    if (videoMode === 'i2v' && !file.type.startsWith('image/')) {
+      setUploadError('Image-to-Video requires an image file (.jpg, .png, .webp).')
+      return
+    }
+    if (videoMode === 'v2v' && !file.type.startsWith('video/')) {
+      setUploadError('Video-to-Video requires a video file (.mp4, .webm, etc.).')
+      return
+    }
+    if (!isVideoModel && !file.type.startsWith('video/')) {
       setUploadError('Please upload a video file (.mp4, .webm, etc.).')
       return
     }
@@ -99,8 +157,27 @@ export function ModelStudio({
     try {
       const asset = await uploadAsset(accessToken ?? '', file)
       setUploadedAsset(asset)
+      setYoutubeUrl('')
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  async function handleYouTubeDownload() {
+    const url = youtubeUrl.trim()
+    if (!url) {
+      setUploadError('Paste a YouTube link first.')
+      return
+    }
+    setIsUploading(true)
+    setUploadError(null)
+    try {
+      const asset = await downloadYouTubeAsset(accessToken ?? '', url)
+      setUploadedAsset(asset)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'YouTube download failed')
     } finally {
       setIsUploading(false)
     }
@@ -109,12 +186,12 @@ export function ModelStudio({
   async function handleGenerate() {
     const promptText = (promptControlRef.current?.getValue() ?? promptDraft).trim()
     if (!selectedModel || !promptText) return
-    if (isVideoModel && !uploadedAsset) {
-      setError('Upload a reference video first — generation uses your upload, not AI scenes from the prompt alone.')
+    if (isVideoModel && videoMode === 'i2v' && (!uploadedAsset || uploadedAsset.type !== 'image')) {
+      setError('Upload an image for Image-to-Video generation.')
       return
     }
-    if (isVideoModel && uploadedAsset && uploadedAsset.type !== 'video') {
-      setError('For video generation, please upload a video file (not only an image).')
+    if (isVideoModel && videoMode === 'v2v' && (!uploadedAsset || uploadedAsset.type !== 'video')) {
+      setError('Upload a video (or download from YouTube) for Video-to-Video generation.')
       return
     }
     setPromptDraft(promptText)
@@ -129,7 +206,7 @@ export function ModelStudio({
         model_id: selectedModel.id,
         prompt: promptText,
         clear_previous: true,
-        source_asset_id: uploadedAsset?.id,
+        source_asset_id: isVideoModel && videoMode !== 't2v' ? uploadedAsset?.id : undefined,
         params: {
           fps: modelFps,
           num_frames: Math.min(MAX_NUM_FRAMES, Math.max(8, durationSec * modelFps)),
@@ -149,13 +226,29 @@ export function ModelStudio({
   }
 
   const categories: Array<ModelCategory | 'all'> = ['video', 'image', 'audio', 'all']
-  const isVideoModel = selectedModel?.category === 'video'
   const modelFps = Number(selectedModel?.preset.fps ?? 12)
   const maxDurationSec = isVideoModel ? Math.min(12, Math.floor(MAX_NUM_FRAMES / Math.max(modelFps, 1))) : 12
   const hasSourceVideo = uploadedAsset?.type === 'video'
+  const hasSourceImage = uploadedAsset?.type === 'image'
+  const activeModeHint = VIDEO_GEN_MODES.find(m => m.id === videoMode)?.hint ?? ''
+  const needsUpload = isVideoModel && videoMode !== 't2v'
+  const canGenerate =
+    !isGenerating &&
+    isReady &&
+    promptDraft.trim() &&
+    (!isVideoModel ||
+      videoMode === 't2v' ||
+      (videoMode === 'i2v' && hasSourceImage) ||
+      (videoMode === 'v2v' && hasSourceVideo))
+  const previewFailed = isJobFailed(previewJob)
+  const previewTimedOut = previewJob ? isJobTimedOut(previewJob) : false
   const showLoading =
-    isGenerating || previewJob?.status === 'processing' || previewJob?.status === 'queued'
-  const showEmpty = !showLoading && !previewJob?.outputUrl
+    !previewFailed &&
+    (isGenerating ||
+      previewJob?.status === 'processing' ||
+      previewJob?.status === 'queued' ||
+      previewJob?.status === 'pending')
+  const showEmpty = !showLoading && !previewFailed && !previewJob?.outputUrl
 
   return (
     <div className="studio">
@@ -166,9 +259,11 @@ export function ModelStudio({
               <div>
                 <h2>Create</h2>
                 <p className="panel-subtitle">
-                  {hasSourceVideo
-                    ? 'Your uploaded video will be used — the prompt guides the edit, not AI scene generation'
-                    : 'Upload a reference video first, then add a prompt'}
+                  {isVideoModel
+                    ? activeModeHint
+                    : hasSourceVideo
+                      ? 'Your uploaded video will be used — the prompt guides the edit'
+                      : 'Upload a file or paste a YouTube link, then add a prompt'}
                 </p>
               </div>
               {selectedModel ? <span className="chip chip--model">{selectedModel.name}</span> : null}
@@ -181,9 +276,33 @@ export function ModelStudio({
                 void handleGenerate()
               }}
             >
+              {isVideoModel ? (
+                <div className="studio-video-modes">
+                  <span className="studio-video-modes__label">Generation type</span>
+                  <div className="studio-video-modes__tabs" role="tablist" aria-label="Video generation type">
+                    {VIDEO_GEN_MODES.map(mode => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={videoMode === mode.id}
+                        className={`studio-video-mode ${videoMode === mode.id ? 'studio-video-mode--active' : ''}`}
+                        onClick={() => setVideoMode(mode.id)}
+                      >
+                        <strong>{mode.label}</strong>
+                        <span>{mode.hint}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {needsUpload ? (
               <div className="studio-upload">
                 <div className="studio-upload__header">
-                  <span className="prompt-label__row">Reference video / image</span>
+                  <span className="prompt-label__row">
+                    {videoMode === 'i2v' ? 'Source image' : 'Source video'}
+                  </span>
                   <div className="studio-upload__actions">
                     <button
                       className="ghost-btn"
@@ -194,7 +313,14 @@ export function ModelStudio({
                       {isUploading ? 'Uploading…' : uploadedAsset ? 'Replace file' : '+ Upload'}
                     </button>
                     {uploadedAsset ? (
-                      <button className="ghost-btn" type="button" onClick={() => setUploadedAsset(null)}>
+                      <button
+                        className="ghost-btn"
+                        type="button"
+                        onClick={() => {
+                          setUploadedAsset(null)
+                          setYoutubeUrl('')
+                        }}
+                      >
                         Remove
                       </button>
                     ) : null}
@@ -204,7 +330,7 @@ export function ModelStudio({
                   ref={uploadInputRef}
                   className="hidden-file-input"
                   type="file"
-                  accept="video/*"
+                  accept={videoMode === 'i2v' ? 'image/*' : 'video/*'}
                   onChange={event => {
                     const file = event.target.files?.[0]
                     if (file) void handleUploadFile(file)
@@ -224,9 +350,43 @@ export function ModelStudio({
                     </p>
                   </div>
                 ) : (
-                  <p className="prompt-hints">Upload a video to analyze — your prompt guides the new output.</p>
+                  <p className="prompt-hints">
+                    {videoMode === 'i2v'
+                      ? 'Upload a photo — the prompt describes how it should move.'
+                      : 'Upload a video or download from YouTube — the prompt guides the style edit.'}
+                  </p>
                 )}
+
+                {videoMode === 'v2v' ? (
+                <div className="studio-youtube">
+                  <label className="prompt-label__row" htmlFor="youtube-url">
+                    Or paste YouTube link
+                  </label>
+                  <div className="studio-youtube__row">
+                    <input
+                      id="youtube-url"
+                      className="studio-youtube__input"
+                      type="url"
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      value={youtubeUrl}
+                      disabled={isUploading || !isReady}
+                      onChange={event => setYoutubeUrl(event.target.value)}
+                    />
+                    <button
+                      className="ghost-btn"
+                      type="button"
+                      disabled={isUploading || !isReady || !youtubeUrl.trim()}
+                      onClick={() => void handleYouTubeDownload()}
+                    >
+                      {isUploading && youtubeUrl.trim() ? 'Downloading…' : 'Download'}
+                    </button>
+                  </div>
+                </div>
+                ) : null}
               </div>
+              ) : isVideoModel && videoMode === 't2v' ? (
+                <p className="prompt-hints">Text-to-Video: no upload needed — describe the scene in your prompt below.</p>
+              ) : null}
 
               <label className="prompt-label">
                 <span className="prompt-label__row">Your prompt</span>
@@ -257,15 +417,21 @@ export function ModelStudio({
               <button
                 className="primary-btn studio-generate-btn studio-generate-btn--large"
                 type="submit"
-                disabled={isGenerating || !isReady || !promptDraft.trim() || (isVideoModel && !uploadedAsset)}
+                disabled={!canGenerate}
               >
                 {isGenerating
-                  ? hasSourceVideo
-                    ? 'Analyzing upload and generating…'
-                    : `Creating your ${isVideoModel ? 'video' : 'output'}…`
-                  : hasSourceVideo
-                    ? 'Generate from uploaded video'
-                    : `Generate ${isVideoModel ? 'Video' : selectedModel?.category === 'image' ? 'Image' : 'Audio'}`}
+                  ? videoMode === 't2v'
+                    ? 'Generating video from prompt…'
+                    : videoMode === 'i2v'
+                      ? 'Animating image…'
+                      : 'Processing video…'
+                  : videoMode === 't2v'
+                    ? 'Generate Text-to-Video'
+                    : videoMode === 'i2v'
+                      ? 'Generate Image-to-Video'
+                      : hasSourceVideo
+                        ? 'Generate Video-to-Video'
+                        : `Generate ${isVideoModel ? 'Video' : selectedModel?.category === 'image' ? 'Image' : 'Audio'}`}
               </button>
 
               {!isReady ? <p className="prompt-hints">Connecting to backend…</p> : null}
@@ -280,9 +446,13 @@ export function ModelStudio({
                 <p className="panel-subtitle">
                   {showLoading
                     ? 'Creating your video…'
-                    : previewJob?.outputUrl
-                      ? 'Your latest result'
-                      : 'Empty — generate a video to preview it here'}
+                    : previewFailed
+                      ? previewTimedOut
+                        ? 'Generation timed out'
+                        : 'Generation failed'
+                      : previewJob?.outputUrl
+                        ? 'Your latest result'
+                        : 'Empty — generate a video to preview it here'}
                 </p>
               </div>
               {previewJob?.outputUrl ? (
@@ -307,6 +477,19 @@ export function ModelStudio({
                     <p className="studio-preview__prompt">Starting…</p>
                   )}
                 </div>
+              ) : previewFailed ? (
+                <div className="studio-preview__empty">
+                  <div className="studio-preview__empty-icon studio-preview__empty-icon--error" aria-hidden>
+                    !
+                  </div>
+                  <h3>{previewTimedOut ? 'Timed out' : 'Generation failed'}</h3>
+                  <p className="error-text">
+                    {previewJob?.errorMessage ||
+                      (previewTimedOut
+                        ? 'No output was produced in time. Check Docker services and try again.'
+                        : 'Output could not be produced. Check worker and ComfyUI logs.')}
+                  </p>
+                </div>
               ) : showEmpty ? (
                 <div className="studio-preview__empty">
                   <div className="studio-preview__empty-icon" aria-hidden>
@@ -319,16 +502,16 @@ export function ModelStudio({
                 <img
                   key={previewJob.id}
                   className="studio-preview__media"
-                  src={previewJob.outputUrl}
+                  src={previewJob.outputUrl ?? undefined}
                   alt="Generated output"
                 />
               ) : previewJob?.outputKind === 'audio' ? (
-                <audio key={previewJob.id} className="studio-preview__audio" src={previewJob.outputUrl} controls autoPlay />
+                <audio key={previewJob.id} className="studio-preview__audio" src={previewJob.outputUrl ?? undefined} controls autoPlay />
               ) : (
                 <video
                   key={previewJob?.id}
                   className="studio-preview__media"
-                  src={previewJob?.outputUrl}
+                  src={previewJob?.outputUrl ?? undefined}
                   controls
                   autoPlay
                   loop

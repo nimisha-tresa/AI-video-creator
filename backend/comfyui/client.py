@@ -29,7 +29,11 @@ class ComfyUIClient:
         self._http: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> "ComfyUIClient":
-        self._http = httpx.AsyncClient(base_url=self.base_url, timeout=settings.comfyui_timeout)
+        self._http = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=settings.comfyui_timeout,
+            trust_env=False,
+        )
         return self
 
     async def __aexit__(self, *_) -> None:
@@ -46,29 +50,48 @@ class ComfyUIClient:
         self, prompt_id: str, on_progress: Callable[[float], None] | None = None
     ) -> dict[str, Any]:
         ws_url = self.base_url.replace("http", "ws") + f"/ws?clientId={self.client_id}&promptId={prompt_id}"
-        async with websockets.connect(ws_url) as ws:
-            while True:
-                raw = await ws.recv()
-                if isinstance(raw, bytes):
-                    continue
-                msg = json.loads(raw)
-                msg_type = msg.get("type")
+        deadline = asyncio.get_running_loop().time() + settings.comfyui_timeout
 
-                if msg_type == "progress" and on_progress:
-                    data = msg.get("data", {})
-                    value = data.get("value", 0)
-                    maximum = data.get("max", 1)
-                    frac = min(value / max(maximum, 1), 0.98)
-                    on_progress(0.05 + frac * 0.90)  # map 5% → 95%
+        try:
+            async with websockets.connect(ws_url, open_timeout=15, close_timeout=5) as ws:
+                while True:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        raise TimeoutError(
+                            f"ComfyUI did not produce output within {settings.comfyui_timeout}s"
+                        )
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                    except asyncio.TimeoutError as exc:
+                        raise TimeoutError(
+                            f"ComfyUI did not produce output within {settings.comfyui_timeout}s"
+                        ) from exc
 
-                elif msg_type == "executed":
-                    data = msg.get("data", {})
-                    if data.get("prompt_id") == prompt_id:
-                        return data.get("output", {})
+                    if isinstance(raw, bytes):
+                        continue
+                    msg = json.loads(raw)
+                    msg_type = msg.get("type")
 
-                elif msg_type == "execution_error":
-                    data = msg.get("data", {})
-                    raise RuntimeError(f"ComfyUI execution error: {data}")
+                    if msg_type == "progress" and on_progress:
+                        data = msg.get("data", {})
+                        value = data.get("value", 0)
+                        maximum = data.get("max", 1)
+                        frac = min(value / max(maximum, 1), 0.98)
+                        on_progress(0.05 + frac * 0.90)  # map 5% → 95%
+
+                    elif msg_type == "executed":
+                        data = msg.get("data", {})
+                        if data.get("prompt_id") == prompt_id:
+                            return data.get("output", {})
+
+                    elif msg_type == "execution_error":
+                        data = msg.get("data", {})
+                        raise RuntimeError(f"ComfyUI execution error: {data}")
+        except websockets.exceptions.InvalidMessage as exc:
+            raise RuntimeError(
+                f"ComfyUI WebSocket unavailable at {self.base_url}. "
+                "The inference engine may be down or misconfigured."
+            ) from exc
 
     async def _download_output(self, output: dict, prompt_id: str | None = None) -> bytes:
         """Download the first image, video, or audio from the ComfyUI output node."""

@@ -1,0 +1,9 @@
+{
+  "model_id": "nano-banana-2",
+  "prompt": "a dog running on a beach at sunset",
+  "params": {
+    "width": 720,
+    "height": 1280,
+    "num_frames": 16
+  }
+}

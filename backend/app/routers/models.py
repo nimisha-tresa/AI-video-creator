@@ -34,7 +34,7 @@ def _model_payload(m):
 
 async def _fetch_comfyui_status() -> dict:
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
             resp = await client.get(f"{settings.comfyui_url.rstrip('/')}/status")
             resp.raise_for_status()
             return resp.json()

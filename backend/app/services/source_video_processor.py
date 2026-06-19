@@ -47,7 +47,7 @@ def process_uploaded_video(
     out_name = f"{uuid.uuid4().hex}.mp4"
     out_path = work / out_name
 
-    response = httpx.get(source_url, timeout=120.0)
+    response = httpx.get(source_url, timeout=120.0, trust_env=False)
     response.raise_for_status()
     if len(response.content) < 10_000:
         raise ValueError("Downloaded source video is too small or invalid")

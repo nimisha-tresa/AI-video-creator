@@ -1,0 +1,10 @@
+{
+  "model_id": "veo-3.1",
+  "prompt": "a dog running on a beach at sunset",
+  "clear_previous": false,
+  "params": {
+    "width": 720,
+    "height": 1280,
+    "num_frames": 16
+  }
+}

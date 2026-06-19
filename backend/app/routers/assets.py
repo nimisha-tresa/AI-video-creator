@@ -11,7 +11,9 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.asset import Asset, AssetType
 from app.models.user import User
+from app.schemas.asset import YouTubeDownloadRequest
 from app.services import storage
+from app.services.youtube_downloader import download_youtube_video
 
 settings = get_settings()
 
@@ -53,6 +55,36 @@ async def upload_asset(
         storage_key=key,
         url=url,
         mime_type=file.content_type,
+        size_bytes=len(data),
+    )
+    db.add(asset)
+    await db.commit()
+    await db.refresh(asset)
+    return asset
+
+
+@router.post("/youtube", status_code=status.HTTP_201_CREATED)
+async def download_youtube_asset(
+    body: YouTubeDownloadRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        data, filename = download_youtube_video(body.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    key = storage.upload_bytes(data, filename, "video/mp4")
+    url = storage.get_presigned_url(key)
+
+    asset = Asset(
+        owner_id=user.id,
+        project_id=body.project_id,
+        type=AssetType.VIDEO,
+        filename=filename,
+        storage_key=key,
+        url=url,
+        mime_type="video/mp4",
         size_bytes=len(data),
     )
     db.add(asset)

@@ -32,7 +32,7 @@ celery_app.conf.update(
         "workers.tasks.upscale.*": {"queue": "upscale"},
         "workers.tasks.dispatch.*": {"queue": "default"},
     },
-    task_soft_time_limit=600,   # 10 min soft
-    task_time_limit=900,        # 15 min hard
+    task_soft_time_limit=settings.comfyui_timeout + 90,
+    task_time_limit=settings.comfyui_timeout + 120,
     result_expires=86400,       # 1 day
 )

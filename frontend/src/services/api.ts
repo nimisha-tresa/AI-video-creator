@@ -1,4 +1,8 @@
+import type { StudioModel } from '@/types/models'
+
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+
+export type { StudioModel }
 
 export interface BackendAsset {
   id: string
@@ -77,18 +81,6 @@ export interface CreateGenerationPayload {
   clear_previous?: boolean
 }
 
-export interface StudioModel {
-  id: string
-  name: string
-  provider: string
-  category: 'video' | 'image' | 'audio' | 'llm'
-  generation_type: string
-  description: string
-  badge: string | null
-  compatible: boolean
-  preset: Record<string, unknown>
-}
-
 export async function listModels(): Promise<StudioModel[]> {
   const response = await fetch(`${API_BASE_URL}/models/`)
   return parseResponse<StudioModel[]>(response)
@@ -114,6 +106,21 @@ export async function fetchStudioConfig(): Promise<StudioConfig> {
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const message = await response.text()
+    try {
+      const parsed = JSON.parse(message) as { detail?: string | Array<{ msg?: string }> }
+      if (typeof parsed.detail === 'string') {
+        const error = new Error(parsed.detail) as ApiError
+        error.status = response.status
+        throw error
+      }
+      if (Array.isArray(parsed.detail)) {
+        const error = new Error(parsed.detail.map(item => item.msg).filter(Boolean).join(', ') || response.statusText) as ApiError
+        error.status = response.status
+        throw error
+      }
+    } catch (err) {
+      if (err instanceof Error && 'status' in err) throw err
+    }
     const error = new Error(message || response.statusText) as ApiError
     error.status = response.status
     throw error
@@ -258,4 +265,16 @@ export function uploadAsset(
 
     xhr.send(formData)
   })
+}
+
+export async function downloadYouTubeAsset(token: string, url: string): Promise<BackendAsset> {
+  const response = await fetch(`${API_BASE_URL}/assets/youtube`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders(token),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ url: url.trim() }),
+  })
+  return parseResponse<BackendAsset>(response)
 }

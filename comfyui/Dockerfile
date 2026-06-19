@@ -28,9 +28,10 @@ RUN pip install --no-cache-dir \
         imageio[ffmpeg]>=2.34.0 \
         pillow>=10.0.0
 
-COPY download_models.py local_engine.py server.py prompt_engine.py /app/
+COPY download_models.py local_engine.py server.py prompt_engine.py mock_server.py entrypoint.sh /app/
+RUN chmod +x /app/entrypoint.sh
 
-RUN mkdir -p /app/models /app/output
+RUN mkdir -p /app/models /app/output /app/workflows
 
 EXPOSE 8188
 
@@ -41,4 +42,4 @@ ENV COMFYUI_ENGINE=auto \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8188/status')" || exit 1
 
-CMD ["python", "/app/server.py"]
+CMD ["/app/entrypoint.sh"]
